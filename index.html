@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>T-Bank Private Core v3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        t_yellow: '#FFDD2D',
+                        t_grey_dark: '#1C1C1E',
+                        t_grey_light: '#2C2C2E',
+                        t_text_sec: '#8E8E93',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: black; color: white; font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .page-anim { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const Icon = ({ name, size = 24, className = "" }) => {
+            useEffect(() => { lucide.createIcons(); }, []);
+            return <i data-lucide={name} style={{width: size, height: size}} className={className}></i>;
+        };
+
+        function App() {
+            // Загружаем общую базу всех пользователей
+            const [db, setDb] = useState(() => {
+                const saved = localStorage.getItem('t_bank_global_db');
+                return saved ? JSON.parse(saved) : [];
+            });
+
+            const [user, setUser] = useState(null);
+            const [mode, setMode] = useState('reg');
+            const [tab, setTab] = useState('main');
+
+            // Сохраняем базу в память при каждом изменении
+            useEffect(() => {
+                localStorage.setItem('t_bank_global_db', JSON.stringify(db));
+            }, [db]);
+
+            // Регистрация
+            const handleReg = (e) => {
+                e.preventDefault();
+                const name = e.target.name.value;
+                const pin = e.target.pin.value;
+                const personalCode = Math.floor(100 + Math.random() * 899).toString();
+
+                const newUser = {
+                    id: Date.now(),
+                    name,
+                    pin,
+                    personalCode,
+                    phone: "+7 9" + Math.floor(100000000 + Math.random() * 900000000),
+                    balance: 15000,
+                    card: "2200 1902 " + Math.floor(1000 + Math.random() * 8999) + " " + Math.floor(1000 + Math.random() * 8999),
+                    history: []
+                };
+
+                // Добавляем в общую базу
+                setDb(prev => [...prev, newUser]);
+                alert(`РЕГИСТРАЦИЯ УСПЕШНА!\nТвой личный код: ${personalCode}\n(Он нужен для входа)`);
+                setUser(newUser);
+            };
+
+            // Вход
+            const handleLogin = (e) => {
+                e.preventDefault();
+                const pin = e.target.pin.value;
+                const pCode = e.target.pCode.value;
+
+                const found = db.find(u => u.pin === pin && u.personalCode === pCode);
+                if (found) {
+                    setUser(found);
+                } else {
+                    alert("Ошибка: Неверный ПИН или Личный код. Либо такого аккаунта еще не существует в этой базе.");
+                }
+            };
+
+            // Перевод (Исправленная логика поиска)
+            const processTransfer = (e) => {
+                e.preventDefault();
+                const targetValue = e.target.target.value.trim();
+                const amount = Number(e.target.amount.value);
+
+                if (amount <= 0) return alert("Введите сумму");
+                if (amount > user.balance) return alert("Недостаточно средств");
+
+                // Ищем получателя в ГЛОБАЛЬНОЙ базе данных (db)
+                // Ищем либо по полному совпадению телефона, либо по последним цифрам карты
+                const rIdx = db.findIndex(u => 
+                    u.phone === targetValue || 
+                    u.card.replace(/\s/g, '').endsWith(targetValue.replace(/\s/g, ''))
+                );
+
+                if (rIdx === -1) {
+                    return alert("ПОЛЬЗОВАТЕЛЬ НЕ НАЙДЕН.\n\nСовет: Чтобы перевести, сначала выйди и создай второго пользователя (друга), запомни его номер телефона, а потом вернись в свой аккаунт.");
+                }
+
+                if (db[rIdx].id === user.id) return alert("Нельзя переводить самому себе");
+
+                // Обновляем базу
+                const updatedDb = db.map(u => {
+                    if (u.id === user.id) {
+                        const newHistory = { id: Date.now(), title: `Перевод: ${db[rIdx].name}`, amt: -amount, type: 'minus', date: 'Сегодня' };
+                        const updatedSender = { ...u, balance: u.balance - amount, history: [newHistory, ...u.history] };
+                        setUser(updatedSender); // Обновляем текущего юзера на экране
+                        return updatedSender;
+                    }
+                    if (u.id === db[rIdx].id) {
+                        const newHistory = { id: Date.now() + 1, title: `От: ${user.name}`, amt: amount, type: 'plus', date: 'Сегодня' };
+                        return { ...u, balance: u.balance + amount, history: [newHistory, ...u.history] };
+                    }
+                    return u;
+                });
+
+                setDb(updatedDb);
+                alert("ПЕРЕВОД ВЫПОЛНЕН!");
+                setTab('main');
+            };
+
+            if (!user) {
+                return (
+                    <div className="flex flex-col h-screen p-8 justify-center bg-black page-anim">
+                        <div className="text-center mb-10">
+                            <div className="w-16 h-16 bg-t_yellow rounded-2xl mx-auto mb-4 flex items-center justify-center">
+                                <Icon name="shield-check" className="text-black" />
+                            </div>
+                            <h1 className="text-2xl font-bold tracking-tight italic">T-BANK Private</h1>
+                            <p className="text-[10px] text-t_text_sec mt-2 uppercase tracking-widest">База данных: {db.length} чел.</p>
+                        </div>
+
+                        {mode === 'reg' ? (
+                            <form onSubmit={handleReg} className="space-y-4">
+                                <input name="name" required placeholder="Имя Фамилия" className="w-full bg-t_grey_dark p-5 rounded-2xl outline-none border border-white/5" />
+                                <input name="pin" type="password" required placeholder="Придумайте ПИН (4 цифры)" className="w-full bg-t_grey_dark p-5 rounded-2xl outline-none border border-white/5 text-center tracking-[0.5em]" />
+                                <button className="w-full bg-t_yellow text-black font-bold py-5 rounded-2xl active:scale-95 transition-all">Открыть счет</button>
+                                <button type="button" onClick={() => setMode('login')} className="w-full text-t_text_sec text-sm pt-4">Уже есть счет? Войти</button>
+                            </form>
+                        ) : (
+                            <form onSubmit={handleLogin} className="space-y-4">
+                                <input name="pin" type="password" required placeholder="ПИН-код" className="w-full bg-t_grey_dark p-5 rounded-2xl outline-none border border-white/5 text-center tracking-[0.5em]" />
+                                <input name="pCode" type="password" required placeholder="Личный код (3 цифры)" className="w-full bg-t_grey_dark p-5 rounded-2xl outline-none border border-white/5 text-center tracking-[0.5em]" />
+                                <button className="w-full bg-t_yellow text-black font-bold py-5 rounded-2xl active:scale-95 transition-all">Войти в кабинет</button>
+                                <button type="button" onClick={() => setMode('reg')} className="w-full text-t_text_sec text-sm pt-4">Новый клиент? Регистрация</button>
+                            </form>
+                        )}
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex flex-col h-screen max-w-md mx-auto page-anim">
+                    <header className="p-6 flex justify-between items-center sticky top-0 bg-black/50 backdrop-blur-xl z-50">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-t_grey_dark flex items-center justify-center font-bold text-t_yellow border border-white/10">{user.name[0]}</div>
+                            <div>
+                                <p className="text-[10px] text-t_text_sec font-bold uppercase tracking-widest">{user.name}</p>
+                                <p className="text-sm font-bold">{user.phone}</p>
+                            </div>
+                        </div>
+                        <button onClick={() => setTab('settings')} className="p-2 bg-t_grey_dark rounded-full"><Icon name="user" size={20} className="text-t_text_sec"/></button>
+                    </header>
+
+                    <main className="flex-1 px-4 overflow-y-auto no-scrollbar pb-28">
+                        {tab === 'main' && (
+                            <div>
+                                <div className="bg-gradient-to-br from-t_grey_dark to-[#111] p-8 rounded-[2.5rem] border border-white/5 mb-8 mt-2 shadow-2xl">
+                                    <div className="flex justify-between items-start mb-12">
+                                        <div>
+                                            <p className="text-t_text_sec text-[10px] font-bold uppercase mb-1 opacity-60">Ваш баланс</p>
+                                            <h2 className="text-4xl font-bold italic tracking-tighter">{user.balance.toLocaleString()} ₽</h2>
+                                        </div>
+                                        <div className="w-10 h-7 bg-t_yellow/80 rounded shadow-inner"></div>
+                                    </div>
+                                    <p className="font-mono text-t_text_sec text-sm italic tracking-widest opacity-50">{user.card}</p>
+                                </div>
+
+                                <button onClick={() => setTab('transfer')} className="w-full bg-t_yellow text-black p-6 rounded-[1.5rem] flex items-center justify-center gap-4 border border-white/5 mb-10 active:scale-95 transition-all shadow-lg shadow-t_yellow/10">
+                                    <Icon name="repeat" /> <span className="font-bold text-lg italic uppercase">Перевести</span>
+                                </button>
+
+                                <h3 className="text-xl font-bold italic mb-5 px-2">История операций</h3>
+                                <div className="space-y-2">
+                                    {user.history.length === 0 ? <p className="text-center text-t_text_sec py-10 italic opacity-40 text-sm">Операций пока нет</p> : 
+                                        user.history.map(item => (
+                                            <div key={item.id} className="flex justify-between items-center p-5 bg-t_grey_dark/40 rounded-3xl border border-white/[0.02]">
+                                                <div className="flex items-center gap-4">
+                                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${item.type === 'plus' ? 'bg-green-500/10 text-green-500' : 'bg-white/5 text-white'}`}>
+                                                        <Icon name={item.type === 'plus' ? "arrow-down-left" : "arrow-up-right"} size={18}/>
+                                                    </div>
+                                                    <div><p className="font-bold text-[15px]">{item.title}</p><p className="text-[10px] text-t_text_sec">{item.date}</p></div>
+                                                </div>
+                                                <span className={`font-bold ${item.type === 'plus' ? 'text-green-500' : 'text-white'}`}>{item.amt > 0 ? '+' : ''}{item.amt.toLocaleString()} ₽</span>
+                                            </div>
+                                        ))
+                                    }
+                                </div>
+                            </div>
+                        )}
+
+                        {tab === 'transfer' && (
+                            <div className="py-4 space-y-6">
+                                <h2 className="text-2xl font-bold mb-8 italic text-center">Перевод средств</h2>
+                                <form onSubmit={processTransfer} className="space-y-4">
+                                    <div className="space-y-1 px-2">
+                                        <label className="text-[10px] text-t_text_sec font-bold uppercase tracking-widest">Куда (Телефон)</label>
+                                        <input name="target" required placeholder="+7 9XX XXX XX XX" className="w-full bg-t_grey_dark p-5 rounded-2xl outline-none border border-white/5" />
+                                    </div>
+                                    <div className="space-y-1 px-2">
+                                        <label className="text-[10px] text-t_text_sec font-bold uppercase tracking-widest">Сумма</label>
+                                        <input name="amount" type="number" required placeholder="0 ₽" className="w-full bg-t_grey_dark p-5 rounded-2xl outline-none border border-white/5 text-t_yellow text-3xl font-bold text-center" />
+                                    </div>
+                                    <button className="w-full bg-t_yellow text-black py-5 rounded-2xl font-bold mt-4 shadow-xl shadow-t_yellow/5">Подтвердить перевод</button>
+                                    <button type="button" onClick={() => setTab('main')} className="w-full text-t_text_sec py-2 text-center text-sm font-bold">ОТМЕНА</button>
+                                </form>
+                            </div>
+                        )}
+
+                        {tab === 'settings' && (
+                            <div className="py-4 space-y-6">
+                                <h2 className="text-2xl font-bold italic">Личный кабинет</h2>
+                                <div className="space-y-3">
+                                    <div className="bg-t_yellow/10 p-5 rounded-3xl border border-t_yellow/20">
+                                        <p className="text-[10px] text-t_yellow font-bold uppercase mb-1">Ваш Личный код (запишите!)</p>
+                                        <p className="text-2xl font-black tracking-[0.5em] text-t_yellow">{user.personalCode}</p>
+                                    </div>
+                                    <div className="bg-t_grey_dark p-5 rounded-3xl border border-white/5 flex justify-between items-center">
+                                        <div>
+                                            <p className="text-[10px] text-t_text_sec font-bold uppercase">Номер телефона</p>
+                                            <p className="font-bold">{user.phone}</p>
+                                        </div>
+                                        <Icon name="phone" size={16} className="text-t_text_sec" />
+                                    </div>
+                                    <button onClick={() => setUser(null)} className="w-full bg-t_grey_light p-5 rounded-2xl font-bold mt-10">ВЫЙТИ ИЗ СИСТЕМЫ</button>
+                                    <button onClick={() => {
+                                        if(confirm("Внимание! Это полностью удалит ваш счет без возврата денег. Продолжить?")) {
+                                            setDb(db.filter(u => u.id !== user.id));
+                                            setUser(null);
+                                        }
+                                    }} className="w-full text-red-500 font-bold py-2 text-sm uppercase tracking-tighter opacity-70">Удалить мой счет навсегда</button>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    <nav className="fixed bottom-0 w-full bg-black/80 backdrop-blur-2xl border-t border-white/5 p-6 flex justify-around items-center z-50">
+                        <button onClick={() => setTab('main')} className={tab === 'main' ? 'text-t_yellow' : 'text-t_text_sec'}><Icon name="home" size={28}/></button>
+                        <button onClick={() => setTab('transfer')} className={tab === 'transfer' ? 'text-t_yellow' : 'text-t_text_sec'}><Icon name="repeat" size={28}/></button>
+                        <button onClick={() => setTab('settings')} className={tab === 'settings' ? 'text-t_yellow' : 'text-t_text_sec'}><Icon name="user" size={28}/></button>
+                    </nav>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
+
