@@ -1,0 +1,24 @@
+body {
+    background-color: black;
+    color: white;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Кастомные стили для карточки и кнопок */
+.t-card-gradient {
+    background: linear-gradient(135deg, #27272a 0%, #000000 100%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.t-yellow-shadow {
+    box-shadow: 0 10px 20px -5px rgba(250, 204, 21, 0.3);
+}
+
+input::placeholder {
+    color: #52525b;
+}
+
+/* Анимация при нажатии на кнопки */
+button:active {
+    transform: scale(0.97);
+}
